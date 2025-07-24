@@ -7,146 +7,97 @@ from dotenv import load_dotenv
 import openai
 from sql import safe_db_execute
 from validatephone import validate_phone
-import html
-import re
 
-# Настройка логгера (безопасное логирование)
+# Настройка логгера
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-logger.propagate = False  # Предотвращаем дублирование логов
 
-# Безопасная загрузка переменных окружения
-load_dotenv(override=False)
+load_dotenv()
 
-# Валидация критических переменных окружения
-REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'OPENROUTER_API_KEY']
-for var in REQUIRED_ENVARS:
-    if not os.getenv(var):
-        logger.critical(f"Отсутствует обязательная переменная окружения: {var}")
-        raise EnvironmentError(f"Необходимо установить переменную окружения: {var}")
-
-# Конфигурация OpenAI с проверками
-openai.api_base = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+# Инициализация OpenAI клиента
+openai.api_base = "https://openrouter.ai/api/v1"
 openai.api_key = os.getenv("OPENROUTER_API_KEY")
-if not openai.api_key:
-    logger.critical("API ключ для OpenAI не найден!")
-    raise ValueError("API ключ для OpenAI обязателен")
 
-# Инициализация бота с безопасными настройками
+# Инициализация бота с хранилищем состояний
 storage = StateMemoryStorage()
-bot = TeleBot(
-    token=os.getenv('TELEGRAM_TOKEN'),
-    state_storage=storage,
-    num_threads=4,  # Ограничение параллельных потоков
-    parse_mode='HTML'  # Безопасный режим разметки
-)
+bot = TeleBot(os.getenv('TELEGRAM_TOKEN'), state_storage=storage)
 
-# Ограничение длины вводимых данных
-MAX_INPUT_LENGTH = 1000
-MAX_NAME_LENGTH = 50
-PHONE_NUMBER_LENGTH = 12
 
-# Определение состояний с проверками
+# Определение состояний
 class DialogStates(StatesGroup):
     waiting_for_lesson = State()
     waiting_for_roots = State()
     waiting_for_goods = State()
     waiting_for_commandments = State()
 
-def sanitize_input(text: str, max_length: int = MAX_INPUT_LENGTH) -> str:
-    """Очистка и проверка вводимых данных"""
-    if not text or not isinstance(text, str):
-        return ""
-    
-    # Удаление потенциально опасных символов и ограничение длины
-    sanitized = html.escape(text.strip()[:max_length])
-    return re.sub(r'[^\w\s\-.,!?а-яА-ЯёЁ]', '', sanitized)
 
-def generate_ai_response(prompt: str, context: str = "") -> str:
-    """Безопасная генерация ответа через OpenAI API"""
+def generate_ai_response(prompt, context=""):
+    """Генерация ответа через OpenAI API"""
     try:
-        if not prompt or len(prompt) > MAX_INPUT_LENGTH:
-            raise ValueError("Недопустимая длина промпта")
-            
         messages = [{
             "role": "system",
             "content": "Ты мудрый раввин, который помогает с вопросами о еврейских традициях."
         }]
 
         if context:
-            safe_context = sanitize_input(context)
-            messages.append({"role": "assistant", "content": safe_context})
+            messages.append({"role": "assistant", "content": context})
 
-        safe_prompt = sanitize_input(prompt)
-        messages.append({"role": "user", "content": safe_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
             model="openai/gpt-3.5-turbo",
             messages=messages,
             max_tokens=1000,
-            temperature=0.7,
-            timeout=30  # Таймаут для запроса
+            temperature=0.7
         )
-        
-        if not response.choices:
-            raise ValueError("Пустой ответ от API")
-            
-        return sanitize_input(response.choices[0].message.content)
+        return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Ошибка OpenAI: {str(e)}", exc_info=True)
+        logger.error(f"Ошибка OpenAI: {str(e)}")
         return "⚠️ Извините, не могу обработать запрос сейчас. Пожалуйста, попробуйте позже."
 
-def is_state(message, state_class) -> bool:
-    """Проверка состояния с обработкой ошибок"""
-    try:
-        current_state = bot.get_state(message.from_user.id, message.chat.id)
-        return current_state == state_class.name
-    except Exception as e:
-        logger.error(f"Ошибка проверки состояния: {str(e)}")
-        return False
 
 @bot.message_handler(commands=['start'])
 def start(message):
     try:
-        # Очистка состояния и данных
         bot.delete_state(message.from_user.id, message.chat.id)
 
-        # Создание безопасной клавиатуры
         markup = types.InlineKeyboardMarkup(row_width=1)
         buttons = [
             types.InlineKeyboardButton('📖 Уроки Торы', callback_data='lessons'),
             types.InlineKeyboardButton('🌳 Поиск корней', callback_data='roots_help'),
             types.InlineKeyboardButton('🛍️ Еврейские товары', callback_data='jewish_goods'),
-            types.InlineKeyboardButton('❓ Консультация', callback_data='commandments_help')
+            types.InlineKeyboardButton('❓ Консультация по еврейским вопросам', callback_data='commandments_help')
         ]
         markup.add(*buttons)
 
         welcome_msg = """
-        ✡️ <b>Шалом!</b> ✡️
+        ✡️ *Шалом!* ✡️
 
 Я ваш виртуальный помощник по еврейским традициям. 
 Чем могу помочь сегодня?
 
 Выберите одну из опций ниже:
         """
+
         bot.send_message(
             chat_id=message.chat.id,
             text=welcome_msg,
             reply_markup=markup,
-            parse_mode='HTML'
+            parse_mode='Markdown'
         )
     except Exception as e:
-        logger.error(f"Ошибка в /start: {str(e)}", exc_info=True)
-        bot.send_message(message.chat.id, "⚠️ <b>Ошибка!</b> Пожалуйста, попробуйте позже.", parse_mode='HTML')
+        logger.error(f"Ошибка в /start: {str(e)}")
+        bot.send_message(message.chat.id, "⚠️ *Ошибка!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
+
 
 @bot.message_handler(commands=['help'])
-def help_command(message):
+def help(message):
     try:
         help_msg = """
-        🆘 <b>Помощь</b>
+        🆘 *Помощь*
 
 Если у вас возникли вопросы или проблемы, пожалуйста:
 1. Опишите вашу проблему
@@ -155,24 +106,15 @@ def help_command(message):
 
 Спасибо за обращение! 🙏
         """
-        bot.send_message(message.chat.id, help_msg, parse_mode='HTML')
+        bot.send_message(message.chat.id, help_msg)
     except Exception as e:
         logger.error(f"Ошибка в /help: {str(e)}")
-        bot.send_message(message.chat.id, "⚠️ <b>Ошибка!</b> Пожалуйста, попробуйте позже.", parse_mode='HTML')
+        bot.send_message(message.chat.id, "⚠️ *Ошибка!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
+
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     try:
-        if not call.data or not call.message:
-            raise ValueError("Невалидные данные callback")
-            
-        # Валидация callback данных
-        valid_callbacks = ['lessons', 'roots_help', 'jewish_goods', 'commandments_help']
-        if call.data not in valid_callbacks:
-            logger.warning(f"Неизвестный callback: {call.data}")
-            bot.answer_callback_query(call.id, "Неизвестная команда")
-            return
-
         if call.data == 'lessons':
             markup = types.InlineKeyboardMarkup()
             btn = types.InlineKeyboardButton(
@@ -183,18 +125,18 @@ def handle_callback(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text="📚 <b>Уроки Торы</b>\n\nНажмите кнопку ниже для перехода к урокам:",
+                text="📚 *Уроки Торы*\n\nНажмите кнопку ниже для перехода к урокам:",
                 reply_markup=markup,
-                parse_mode='HTML'
+                parse_mode='Markdown'
             )
 
         elif call.data == 'roots_help':
             bot.set_state(call.from_user.id, DialogStates.waiting_for_roots, call.message.chat.id)
             roots_msg = """
-            🌳 <b>Поиск еврейских корней</b>
+            🌳 *Поиск еврейских корней*
 
 Пожалуйста, отправьте ваши данные в формате:
-<b>Имя НомерТелефона</b>
+*Имя НомерТелефона*
 
 Пример: 
 Моше 89161234567 или Давид +79161234567
@@ -205,7 +147,7 @@ def handle_callback(call):
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=roots_msg,
-                parse_mode='HTML'
+                parse_mode='Markdown'
             )
 
         elif call.data == 'jewish_goods':
@@ -216,7 +158,7 @@ def handle_callback(call):
             )
             markup.add(btn)
             goods_msg = """
-            🛍️ <b>Еврейские товары</b>
+            🛍️ *Еврейские товары*
 
 Каждый еврей должен иметь:
 - Кипы
@@ -231,13 +173,13 @@ def handle_callback(call):
                 call.message.chat.id,
                 text=goods_msg,
                 reply_markup=markup,
-                parse_mode='HTML'
+                parse_mode='Markdown'
             )
 
         elif call.data == 'commandments_help':
             bot.set_state(call.from_user.id, DialogStates.waiting_for_commandments, call.message.chat.id)
             commandments_msg = """
-            ✡️ <b>Консультация по еврейским вопросам</b>
+            ✡️ *Консультация по еврейским вопросам*
 
 Опишите ваш вопрос подробно, и наш мудрец даст вам развернутый ответ согласно традициям.
 
@@ -250,58 +192,50 @@ def handle_callback(call):
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=commandments_msg,
-                parse_mode='HTML'
+                parse_mode='Markdown'
             )
 
         bot.answer_callback_query(call.id)
     except Exception as e:
-        logger.error(f"Ошибка callback: {str(e)}", exc_info=True)
-        try:
-            bot.send_message(call.message.chat.id, "⚠️ <b>Ошибка!</b> Пожалуйста, попробуйте снова.", parse_mode='HTML')
-        except:
-            pass
+        logger.error(f"Ошибка callback: {str(e)}")
+        bot.send_message(call.message.chat.id, "⚠️ *Ошибка!* Пожалуйста, попробуйте снова.", parse_mode='Markdown')
+
+def is_state(message, state_class):
+    current_state = bot.get_state(message.from_user.id, message.chat.id)
+    return current_state == state_class.name
 
 @bot.message_handler(func=lambda message: is_state(message, DialogStates.waiting_for_roots))
 def process_roots(message):
     try:
-        if not message.text or len(message.text) > (MAX_NAME_LENGTH + PHONE_NUMBER_LENGTH + 1):
+        parts = message.text.strip().split()
+        if len(parts) < 2:
             error_msg = """
-            ❌ <b>Неверный формат</b>
+            ❌ *Неверный формат*
 
-Пожалуйста, укажите <b>имя и номер телефона</b> через пробел.
+Пожалуйста, укажите *имя и номер телефона* через пробел.
 
 Пример:
 Авраам 89161234567 или Сара +79161234567
             """
-            bot.reply_to(message, error_msg, parse_mode='HTML')
+            bot.reply_to(message, error_msg, parse_mode='Markdown')
             return
-
-        parts = message.text.strip().split()
-        if len(parts) < 2:
-            raise ValueError("Недостаточно данных")
 
         name = ' '.join(parts[:-1])
         number = parts[-1]
 
-        # Валидация имени
-        safe_name = sanitize_input(name, MAX_NAME_LENGTH)
-        if not safe_name:
-            raise ValueError("Невалидное имя")
-
         if not validate_phone(number):
             error_msg = """
-            ❌ <b>Неверный номер телефона</b>
+            ❌ *Неверный номер телефона*
 
 Пожалуйста, используйте один из форматов:
-- <code>89161234567</code>
-- <code>+79161234567</code>
+- `89161234567`
+- `+79161234567`
 
 Попробуйте еще раз:
             """
-            bot.reply_to(message, error_msg, parse_mode='HTML')
+            bot.reply_to(message, error_msg, parse_mode='Markdown')
             return
 
-        # Проверка существующей заявки
         exists = safe_db_execute(
             "SELECT 1 FROM roots WHERE id = ? LIMIT 1",
             (message.from_user.id,),
@@ -309,64 +243,57 @@ def process_roots(message):
         )
 
         if exists:
-            bot.reply_to(message, "ℹ️ Вы уже оставляли заявку. Мы скоро с вами свяжемся!", parse_mode='HTML')
+            bot.reply_to(message, "ℹ️ Вы уже оставляли заявку. Мы скоро с вами свяжемся!", parse_mode='Markdown')
         else:
-            # Безопасное сохранение в базу
             success = safe_db_execute(
                 "INSERT INTO roots (id, name, number) VALUES (?, ?, ?)",
-                (message.from_user.id, safe_name, number)
+                (message.from_user.id, name, number)
             )
 
             if success:
-                success_msg = f"""
-                ✅ <b>Спасибо за заявку!</b>
+                success_msg = """
+                ✅ *Спасибо за заявку!*
 
 Ваши данные:
-- <b>Имя:</b> {safe_name}
-- <b>Телефон:</b> {number}
+- *Имя:* {}
+- *Телефон:* {}
 
 Мы свяжемся с вами в ближайшее время! 📞
-                """
-                bot.reply_to(message, success_msg, parse_mode='HTML')
+                """.format(name, number)
+                bot.reply_to(message, success_msg, parse_mode='Markdown')
             else:
-                raise Exception("Ошибка сохранения в базу")
+                bot.reply_to(message, "⚠️ *Ошибка сохранения!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
 
         bot.delete_state(message.from_user.id, message.chat.id)
-        logger.info(f"Обработана заявка на поиск корней от {message.from_user.id}")
+        logger.info(f"Processed roots: {name} {number}")
     except Exception as e:
         logger.error(f"Ошибка обработки корней: {str(e)}", exc_info=True)
-        bot.send_message(message.chat.id, "⚠️ <b>Ошибка обработки!</b> Пожалуйста, попробуйте позже.", parse_mode='HTML')
+        bot.send_message(message.chat.id, "⚠️ *Ошибка обработки!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
         bot.delete_state(message.from_user.id, message.chat.id)
 
 @bot.message_handler(func=lambda message: is_state(message, DialogStates.waiting_for_commandments))
 def process_commandments(message):
     try:
-        if not message.text or len(message.text) > MAX_INPUT_LENGTH:
-            raise ValueError("Невалидная длина вопроса")
-
-        safe_question = sanitize_input(message.text)
-        prompt = f"Пользователь спрашивает о соблюдении еврейских законов: {safe_question}. Объясните подробно как правильно соблюдать."
+        prompt = f"Пользователь спрашивает о соблюдении еврейских законов: {message.text}. Объясните подробно как правильно соблюдать."
         response = generate_ai_response(prompt)
 
         formatted_response = f"""
-        ✡️ <b>Ответ на ваш вопрос</b> ✡️
+        ✡️ *Ответ на ваш вопрос* ✡️
 
 {response}
 
 Если у вас остались вопросы, не стесняйтесь задавать их! 🙏
         """
-        bot.send_message(message.chat.id, formatted_response, parse_mode='HTML')
+        bot.send_message(message.chat.id, formatted_response, parse_mode='Markdown')
 
     except Exception as e:
-        logger.error(f"Ошибка обработки заповедей: {str(e)}", exc_info=True)
-        bot.send_message(message.chat.id, "⚠️ <b>Ошибка обработки!</b> Пожалуйста, попробуйте позже.", parse_mode='HTML')
-    finally:
+        logger.error(f"Ошибка обработки заповедей: {str(e)}")
+        bot.send_message(message.chat.id, "⚠️ *Ошибка обработки!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
         bot.delete_state(message.from_user.id, message.chat.id)
 
 @bot.message_handler(content_types=['text'])
-def handle_text(message):
+def text(message):
     try:
-        # Очистка состояния при любом текстовом сообщении
         bot.delete_state(message.from_user.id, message.chat.id)
 
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -379,7 +306,7 @@ def handle_text(message):
         markup.add(*buttons)
 
         nav_msg = """
-        🔍 <b>Навигация</b>
+        🔍 *Навигация*
 
 Используйте кнопки ниже для выбора нужного раздела:
         """
@@ -387,17 +314,14 @@ def handle_text(message):
             chat_id=message.chat.id,
             text=nav_msg,
             reply_markup=markup,
-            parse_mode='HTML'
+            parse_mode='Markdown'
         )
+
     except Exception as e:
-        logger.error(f"Ошибка обработки текста: {str(e)}", exc_info=True)
-        bot.send_message(message.chat.id, "⚠️ <b>Ошибка!</b> Пожалуйста, попробуйте позже.", parse_mode='HTML')
+        logger.error(f"Ошибка: {str(e)}")
+        bot.send_message(message.chat.id, "⚠️ *Ошибка!* Пожалуйста, попробуйте позже.", parse_mode='Markdown')
 
 if __name__ == '__main__':
-    try:
-        logger.info("🚀 Запуск бота...")
-        bot.infinity_polling(timeout=60, long_polling_timeout=30)
-    except Exception as e:
-        logger.critical(f"Критическая ошибка: {str(e)}", exc_info=True)
-    finally:
-        logger.info("🛑 Бот остановлен")
+    logger.info("🚀 Запуск бота...")
+    bot.infinity_polling()
+    logger.info("🛑 Бот остановлен")
