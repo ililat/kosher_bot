@@ -8,6 +8,7 @@ import openai
 from sql import safe_db_execute
 from validatephone import validate_phone
 
+print(os.getenv("OPENROUTER_API_KEY"))
 # Настройка логгера
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +49,7 @@ def generate_ai_response(prompt, context=""):
         messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
-            model="openai/gpt-3.5-turbo",
+            model="openai/gpt-4o",
             messages=messages,
             max_tokens=1000,
             temperature=0.7
