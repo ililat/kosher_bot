@@ -55,7 +55,7 @@ def generate_ai_response(prompt, context=""):
         messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
-            model="qwen/qwen3-235b-a22b-07-25:free",
+            model="openrouter/horizon-alpha",
             messages=messages,
             max_tokens=1000,
             temperature=0.7
@@ -375,7 +375,6 @@ def process_commandments(message):
         logger.error(f"Ошибка обработки заповедей: {str(e)}")
         bot.send_message(message.chat.id, "⚠️ *Ошибка обработки!* Пожалуйста, попробуйте позже.", 
                         reply_markup=main_keyboard, parse_mode='Markdown')
-    finally:
         bot.delete_state(message.from_user.id, message.chat.id)
 
 @bot.message_handler(content_types=['text'])
