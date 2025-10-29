@@ -1,0 +1,5 @@
+pyTelegramBotAPI==4.15.4
+python-dotenv==1.0.0
+openai==0.28.1
+requests==2.31.0
+phonenumbers==8.13.24
