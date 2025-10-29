@@ -199,7 +199,7 @@ def handle_callback(call):
             markup = types.InlineKeyboardMarkup()
             btn = types.InlineKeyboardButton(
                 "➡️ Перейти к урокам",
-                url="https://example.com/torah-lessons"
+                url="https://tshuva.ru/"
             )
             markup.add(btn)
             bot.edit_message_text(
@@ -234,7 +234,7 @@ def handle_callback(call):
             markup = types.InlineKeyboardMarkup()
             btn = types.InlineKeyboardButton(
                 "🛒 Перейти в магазин",
-                url="https://example.com/jewish-goods"
+                url="https://ru.kosherlekha.ru/project/charity/other-help/#socials"
             )
             markup.add(btn)
             goods_msg = """
