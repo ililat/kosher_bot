@@ -55,7 +55,7 @@ def generate_ai_response(prompt, context=""):
         messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
-            model="openrouter/horizon-alpha",
+            model="ibm-granite/granite-4.0-h-micro",
             messages=messages,
             max_tokens=1000,
             temperature=0.7
@@ -112,7 +112,7 @@ def start(message):
 @bot.message_handler(func=lambda message: message.text == '📖 Уроки Торы')
 def handle_torah(message):
     markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton("➡️ Перейти к урокам", url="https://example.com/torah-lessons")
+    btn = types.InlineKeyboardButton("➡️ Перейти к урокам", url="https://ru.kosherlekha.ru/project/charity/other-help/#socials")
     markup.add(btn)
     bot.send_message(
         message.chat.id,
@@ -137,7 +137,7 @@ def handle_roots(message):
 @bot.message_handler(func=lambda message: message.text == '🛍️ Еврейские товары')
 def handle_goods(message):
     markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton("🛒 Перейти в магазин", url="https://example.com/jewish-goods")
+    btn = types.InlineKeyboardButton("🛒 Перейти в магазин", url="https://ru.kosherlekha.ru/project/charity/other-help/#socials")
     markup.add(btn)
     bot.send_message(
         message.chat.id,
@@ -173,7 +173,7 @@ def help_command(message):
 
 Если у вас возникли вопросы или проблемы, пожалуйста:
 1. Опишите вашу проблему
-2. Напишите нам @support_username
+2. Напишите нам @IlKrav
 3. Мы ответим в ближайшее время!
 
 Спасибо за обращение! 🙏
